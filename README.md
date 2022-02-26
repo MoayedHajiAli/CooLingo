@@ -1,1 +1,1 @@
-# Graduation-project
+# CooLingo
