@@ -1,3 +1,14 @@
 pretrained_models
 .ipynb_checkpoints
 *.pyc
+Experiments/text_to_speach_model/config_vocoder.json
+
+Experiments/text_to_speach_model/config.json
+
+Experiments/text_to_speach_model/scale_stats_vocoder.npy
+
+Experiments/text_to_speach_model/tts_model.pth.tar
+
+Experiments/text_to_speach_model/vocoder_model.pth.tar
+
+Experiments/text_to_speach_model/TTS_repo/
