@@ -36,7 +36,7 @@ class SpeechToText():
         with open(audio_path, "wb") as f:
             f.write(audio.get_wav_data())
     
-    def speech_to_text(self, audio_file_name : str):
+    def speech_to_text(self, AUDIO_FILE : str):
         """
         Reads an audio file and converts it into text.
         
@@ -47,8 +47,7 @@ class SpeechToText():
             The text (str) retrieved from the audio file.
 
         """
-        AUDIO_FILE = path.join(path.dirname(path.realpath(__file__)), 
-            path.join(self.OUTPUT_PATH, audio_file_name))
+        print(AUDIO_FILE)
 
         # use the audio file as the audio source
         r = sr.Recognizer()
@@ -86,5 +85,7 @@ class SpeechToText():
 
         """
         self.get_speech(audio_file_name)
-        text = self.speech_to_text(audio_file_name)
+        AUDIO_FILE = path.join(path.dirname(path.realpath(__file__)), 
+            path.join(self.OUTPUT_PATH, audio_file_name))
+        text = self.speech_to_text(AUDIO_FILE)
         return text
