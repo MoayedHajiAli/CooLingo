@@ -47,7 +47,6 @@ class SpeechToText():
             The text (str) retrieved from the audio file.
 
         """
-        print(AUDIO_FILE)
 
         # use the audio file as the audio source
         r = sr.Recognizer()
@@ -61,7 +60,7 @@ class SpeechToText():
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
             text = r.recognize_google(audio)
-            print(f'Google Speech Recognition thinks you said {text}')
+            print(f'Google Speech: {text}')
 
         except sr.UnknownValueError:
             text = "UNKOWN"
@@ -89,3 +88,4 @@ class SpeechToText():
             path.join(self.OUTPUT_PATH, audio_file_name))
         text = self.speech_to_text(AUDIO_FILE)
         return text
+
