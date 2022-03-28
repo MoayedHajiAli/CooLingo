@@ -23,7 +23,7 @@ class Blenderbot:
         """
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-        self.device = torch.device("cuda")
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device('cpu')
         self.model = self.model.eval().to(self.device)
         
         self.temperature = temperature
