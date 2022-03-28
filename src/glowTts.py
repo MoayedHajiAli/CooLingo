@@ -16,7 +16,8 @@ from TTS.tts.utils.text.symbols import symbols, phonemes, make_symbols
 from TTS.tts.utils.synthesis import synthesis
 from TTS.tts.utils.io import load_checkpoint
 
-from TTS.vocoder.utils.generic_utils import setup_generator
+from src.modules.TTS_repo.TTS.vocoder.utils.generic_utils import setup_generator
+
 
 
 files_to_download = {
@@ -145,7 +146,6 @@ class GlowTts:
         # compute run-time performance
         rtf = (time.time() - t_1) / (len(waveform) / self.ap.sample_rate)
         tps = (time.time() - t_1) / len(waveform)
-
         # running time info
         # print(waveform.shape)
         # print(" > Run-time: {}".format(time.time() - t_1))
@@ -158,24 +158,11 @@ class GlowTts:
         return alignment, mel_postnet_spec, stop_tokens, waveform
 
     def load_models_and_files(self):
-        if not path.exists("pretrained_models"):
-            os.makedirs("pretrained_models")
-        os.chdir(os.path.join(os.getcwd(), "pretrained_models"))
+        ckpt_dir = 'pretrained_models/tts'
+        os.makedirs(ckpt_dir, exist_ok=True)
 
-        if not path.exists("tts"):
-            os.makedirs("tts")
-        os.chdir(os.path.join(os.getcwd(), "tts"))
-
-        print(os.getcwd())
         for file_name in list(files_to_download.keys()):
-            if not path.exists(file_name):
+            if not path.exists(os.path.join(ckpt_dir, file_name)):
                 gdown.download(
-                    id=files_to_download[file_name], output=file_name)
-
-        if not path.exists("TTS_repo"):
-            os.system("git clone https://github.com/coqui-ai/TTS TTS_repo")
-            os.system("cd TTS_repo")
-            os.system("pip install -r requirements.txt")
-            os.system("python setup.py develop")
-        os.chdir("..")
-        os.chdir("..")
+                    id=files_to_download[file_name], output=os.path.join(ckpt_dir, file_name))
+        
