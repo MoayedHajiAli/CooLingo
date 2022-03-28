@@ -2,7 +2,6 @@ from mimetypes import init
 import os.path
 from os import path
 import gdown
-from git import Repo
 import os
 import sys
 import torch
@@ -44,6 +43,7 @@ class GlowTts:
         TTS_CONFIG = os.path.join(files_path, "config.json")
         VOCODER_MODEL = os.path.join(files_path, "vocoder_model.pth.tar")
         VOCODER_CONFIG = os.path.join(files_path, "config_vocoder.json")
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device('cpu')
 
         # load configs
         self.TTS_CONFIG = load_config(TTS_CONFIG)
@@ -70,7 +70,7 @@ class GlowTts:
         model = setup_model(num_chars, len(speakers), self.TTS_CONFIG)
 
         # load model state
-        model, _ = load_checkpoint(model, TTS_MODEL, use_cuda=True)
+        model, _ = load_checkpoint(model, TTS_MODEL, use_cuda=torch.cuda.is_available())
         self.model = model
         self.model.eval()
         self.model.store_inverse()
@@ -88,11 +88,12 @@ class GlowTts:
         print(f"scale_factor: {self.scale_factor}")
 
         self.ap_vocoder = AudioProcessor(**self.VOCODER_CONFIG['audio'])
-        if True:
-            self.vocoder_model.cuda()
+        self.vocoder_model.to(self.device)
         self.vocoder_model.eval()
 
     def generate_voice(self, sentence: str, length_scale=1.0, noise_scale=0.33, use_cuda=True, enable_figures=False):
+        use_cuda = use_cuda and torch.cuda.is_available()
+
         self.model.length_scale = length_scale  # set speed of the speech.
         self.model.noise_scale = noise_scale  # set speech variationd
 

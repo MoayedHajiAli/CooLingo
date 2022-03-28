@@ -43,5 +43,9 @@ dependencies:
     - pyyaml
     - transformers==4.17.0
     - numba==0.48
+    - SpeechRecognition
+    - -e src/modules/TTS_repo
 # conda env create -f environment.yaml
 
+# system req
+# espeak
