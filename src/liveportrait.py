@@ -285,17 +285,18 @@ class LiveSpeechPortraits:
             current_pred_feature_map = torch.stack([self.facedataset.dataset.get_data_test_mode(pred_landmarks[i], 
                                                                               pred_shoulders[i], 
                                                                               self.facedataset.dataset.image_pad)
-                                                                              for i in range(ind, ind+batch_size)])
+                                                                              for i in range(ind, min(ind+batch_size), nframe)])
             input_feature_maps = current_pred_feature_map.to(self.device)
-            candidates = self.img_candidates.repeat(batch_size, 1, 1, 1)
-            print(input_feature_maps.shape, candidates.shape)
+            candidates = self.img_candidates.repeat(current_pred_feature_map.shape[0], 1, 1, 1)
             pred_fake = self.Feature2Face.inference(input_feature_maps, candidates) 
-            # # save results
-            # visual_list = [('pred', util.tensor2im(pred_fake[0]))]
-            # if self.save_feature_maps:
-            #     visual_list += [('input', np.uint8(current_pred_feature_map[0].cpu().numpy() * 255))]
-            # visuals = OrderedDict(visual_list)
-            # self.visualizer.save_images(save_root, visuals, str(ind+1))
+            
+            # save results
+            for i in range(pred_fake.shape[0]):
+                visual_list = [('pred', util.tensor2im(pred_fake[i]))]
+                if self.save_feature_maps:
+                    visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
+                visuals = OrderedDict(visual_list)
+                self.visualizer.save_images(save_root, visuals, str(ind+i+1))
 
 
         if make_video:
