@@ -7,6 +7,7 @@ import torch
 from collections import OrderedDict
 import librosa
 from skimage.io import imread
+from PIL import Image 
 import cv2
 import scipy.io as sio
 import argparse
@@ -38,7 +39,7 @@ class LiveSpeechPortraits:
                 'APC_epoch_160.model':'1uUU6iZ8CdgsCk3JAG6V7BhJXnfWpaQ7a'}
     
 
-    def __init__(self, id='May', apc_model_name='APC_epoch_160.model'):
+    def __init__(self, id='May', apc_model_name='APC_epoch_160.model', vid_res=256):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         with open(join('src/modules/LiveSpeechPortraits/config/', id + '.yaml')) as f:
@@ -83,7 +84,7 @@ class LiveSpeechPortraits:
         # candidates images    
         self.img_candidates = []
         for j in range(4):
-            output = imread(join(data_root, 'candidates', f'normalized_full_{j}.jpg'))
+            output = np.array(Image.open(join(data_root, 'candidates', f'normalized_full_{j}.jpg')).resize((vid_res, vid_res)))
             output = A.pytorch.transforms.ToTensor(normalize={'mean':(0.5,0.5,0.5), 
                                                               'std':(0.5,0.5,0.5)})(image=output)['image']
             self.img_candidates.append(output)
@@ -119,16 +120,18 @@ class LiveSpeechPortraits:
         self.Feat_AMPs = config['model_params']['Audio2Mouth']['AMP'][1:]
         self.rot_AMP, self.trans_AMP = config['model_params']['Headpose']['AMP']
         self.shoulder_AMP = config['model_params']['Headpose']['shoulder_AMP']
-        self.save_feature_maps = config['model_params']['Image2Image']['save_input']
+        self.save_feature_maps = False # config['model_params']['Image2Image']['save_input']
 
         #### common settings
         self.Featopt = FeatureOptions().parse() 
         self.Headopt = HeadposeOptions().parse()
         self.Renderopt = RenderOptions().parse()
+        self.Renderopt.loadSize = vid_res
         self.Featopt.load_epoch = config['model_params']['Audio2Mouth']['ckp_path']
         self.Headopt.load_epoch = config['model_params']['Headpose']['ckp_path']
         self.Renderopt.dataroot = config['dataset_params']['root']
         self.Renderopt.load_epoch = config['model_params']['Image2Image']['ckp_path']
+        print(config['model_params']['Image2Image']['size'])
         self.Renderopt.size = config['model_params']['Image2Image']['size']
         ## GPU or CPU
         if self.device == 'cpu':
@@ -191,7 +194,7 @@ class LiveSpeechPortraits:
     def generate_protrait(self, driving_audio, audio_name=None, sr=16000, vid_res=512, fps=60, save_intermediates=True, make_video=False, batch_size=32):
         save_intermediates = save_intermediates or not make_video
         FPS = fps
-        self.Renderopt.loadSize = vid_res
+        # self.Renderopt.loadSize = vid_res
         
         if audio_name == None:
             audio_name = driving_audio[:-4]
@@ -285,18 +288,18 @@ class LiveSpeechPortraits:
             current_pred_feature_map = torch.stack([self.facedataset.dataset.get_data_test_mode(pred_landmarks[i], 
                                                                               pred_shoulders[i], 
                                                                               self.facedataset.dataset.image_pad)
-                                                                              for i in range(ind, min(ind+batch_size), nframe)])
+                                                                              for i in range(ind, min(ind+batch_size, nframe))])
             input_feature_maps = current_pred_feature_map.to(self.device)
             candidates = self.img_candidates.repeat(current_pred_feature_map.shape[0], 1, 1, 1)
             pred_fake = self.Feature2Face.inference(input_feature_maps, candidates) 
             
-            # save results
-            for i in range(pred_fake.shape[0]):
-                visual_list = [('pred', util.tensor2im(pred_fake[i]))]
-                if self.save_feature_maps:
-                    visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
-                visuals = OrderedDict(visual_list)
-                self.visualizer.save_images(save_root, visuals, str(ind+i+1))
+            # # save results
+            # for i in range(pred_fake.shape[0]):
+            #     visual_list = [('pred', util.tensor2im(pred_fake[i]).astype(np.uint8))]
+            #     if self.save_feature_maps:
+            #         visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
+            #     visuals = OrderedDict(visual_list)
+            #     self.visualizer.save_images(save_root, visuals, str(ind+i+1))
 
 
         if make_video:
