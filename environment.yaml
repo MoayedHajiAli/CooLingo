@@ -47,5 +47,7 @@ dependencies:
     - transformers==3.2.0
     - tts
     - speech_recognition
+    - numba==0.48
+    - options
 # conda env create -f environment.yaml
 
