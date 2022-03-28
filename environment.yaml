@@ -45,6 +45,7 @@ dependencies:
     - numba==0.48
     - SpeechRecognition
     - -e src/modules/TTS_repo
+    - dominate
 # conda env create -f environment.yaml
 
 # system req

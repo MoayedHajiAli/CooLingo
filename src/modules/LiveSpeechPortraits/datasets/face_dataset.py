@@ -1,5 +1,5 @@
 import os
-from datasets.base_dataset import BaseDataset
+from src.modules.LiveSpeechPortraits.datasets.base_dataset import BaseDataset
 import os.path
 from pathlib import Path
 import torch

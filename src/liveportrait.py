@@ -37,15 +37,17 @@ class LiveSpeechPortraits:
     ckpt_g_id = {'May':'1E_chAFvsX6Q9YKA8J8lFy4XU4YRSLvlu',
                 'APC_epoch_160.model':'1uUU6iZ8CdgsCk3JAG6V7BhJXnfWpaQ7a'}
     
+
     def __init__(self, id='May', apc_model_name='APC_epoch_160.model'):
-        self.device = torch.device("cuda")
-        
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
         with open(join('src/modules/LiveSpeechPortraits/config/', id + '.yaml')) as f:
             config = yaml.load(f, Loader=yaml.Loader)
         
         data_root = 'pretrained_models/LiveSpeechPortraits/data/'
         
         # download chpt if not exitsts
+        os.makedirs(data_root, exist_ok=True)
         if not os.path.exists(join(data_root, id)):
             zip_file_path = join(data_root, f'{id}.zip')
             gdown.download(id=self.ckpt_g_id[id], output=zip_file_path)
@@ -79,13 +81,13 @@ class LiveSpeechPortraits:
         self.std_mean_pts3d = np.load(config['dataset_params']['pts3d_path']).mean(axis=0)
         
         # candidates images    
-        img_candidates = []
+        self.img_candidates = []
         for j in range(4):
             output = imread(join(data_root, 'candidates', f'normalized_full_{j}.jpg'))
             output = A.pytorch.transforms.ToTensor(normalize={'mean':(0.5,0.5,0.5), 
                                                               'std':(0.5,0.5,0.5)})(image=output)['image']
-            img_candidates.append(output)
-        img_candidates = torch.cat(img_candidates).unsqueeze(0).to(self.device) 
+            self.img_candidates.append(output)
+        self.img_candidates = torch.cat(self.img_candidates).unsqueeze(0).to(self.device) 
 
         # shoulders
         self.shoulders = np.load(join(data_root, 'normalized_shoulder_points.npy'))
@@ -122,15 +124,15 @@ class LiveSpeechPortraits:
         #### common settings
         self.Featopt = FeatureOptions().parse() 
         self.Headopt = HeadposeOptions().parse()
-        Renderopt = RenderOptions().parse()
+        self.Renderopt = RenderOptions().parse()
         self.Featopt.load_epoch = config['model_params']['Audio2Mouth']['ckp_path']
         self.Headopt.load_epoch = config['model_params']['Headpose']['ckp_path']
-        Renderopt.dataroot = config['dataset_params']['root']
-        Renderopt.load_epoch = config['model_params']['Image2Image']['ckp_path']
-        Renderopt.size = config['model_params']['Image2Image']['size']
+        self.Renderopt.dataroot = config['dataset_params']['root']
+        self.Renderopt.load_epoch = config['model_params']['Image2Image']['ckp_path']
+        self.Renderopt.size = config['model_params']['Image2Image']['size']
         ## GPU or CPU
         if self.device == 'cpu':
-            self.Featopt.gpu_ids = self.Headopt.gpu_ids = Renderopt.gpu_ids = []
+            self.Featopt.gpu_ids = self.Headopt.gpu_ids = self.Renderopt.gpu_ids = []
 
 
 
@@ -140,7 +142,10 @@ class LiveSpeechPortraits:
                                 config['model_params']['APC']['hidden_size'],
                                 config['model_params']['APC']['num_layers'],
                                 config['model_params']['APC']['residual'])
-        self.APC_model.load_state_dict(torch.load(config['model_params']['APC']['ckp_path']), strict=False)
+        print(config['model_params']['APC']['ckp_path'])
+        print(self.device)
+
+        self.APC_model.load_state_dict(torch.load(config['model_params']['APC']['ckp_path'], map_location=self.device), strict=False)
         self.APC_model.to(self.device) 
         self.APC_model.eval()
         
@@ -160,19 +165,38 @@ class LiveSpeechPortraits:
             else:
                 self.Headopt.A2H_receptive_field = self.Audio2Headpose.Audio2Headpose.WaveNet.receptive_field
                 
-        print('---------- Loading Model: {} -------------'.format(Renderopt.task))
-        self.facedataset = create_dataset(Renderopt) 
-        self.Feature2Face = create_model(Renderopt)
-        self.Feature2Face.setup(Renderopt)   
+        print('---------- Loading Model: {} -------------'.format(self.Renderopt.task))
+        self.facedataset = create_dataset(self.Renderopt)
+
+        print(self.Renderopt)
+        self.Feature2Face = create_model(self.Renderopt)
+        self.Feature2Face.setup(self.Renderopt)   
         self.Feature2Face.eval()
-        self.visualizer = Visualizer(Renderopt)
+        self.visualizer = Visualizer(self.Renderopt)
 
 
+
+    def write_video_with_audio(self, nframe, save_root, audio_path, output_path, prefix='pred_'):
+        fps, fourcc = 60, cv2.VideoWriter_fourcc(*'DIVX')
+        video_tmp_path = join(save_root, 'tmp.avi')
+        out = cv2.VideoWriter(video_tmp_path, fourcc, fps, (Renderopt.loadSize, Renderopt.loadSize))
+        for j in tqdm(range(nframe), position=0, desc='writing video'):
+            img = cv2.imread(join(save_root, prefix + str(j+1) + '.jpg'))
+            out.write(img)
+        out.release() 
+        cmd = 'ffmpeg -i "' + video_tmp_path + '" -i "' + audio_path + '" -codec copy -shortest "' + output_path + '"'
+        subprocess.call(cmd, shell=True) 
+        os.remove(video_tmp_path)  # remove the template video
+            
+    def generate_protrait(self, driving_audio, audio_name=None, sr=16000, vid_res=512, fps=60, save_intermediates=True, make_video=False, batch_size=32):
+        save_intermediates = save_intermediates or not make_video
+        FPS = fps
+        self.Renderopt.loadSize = vid_res
         
-        
-    def generate_protrait(self, driving_audio, sr=16000, vid_res=(512, 512), fps=60):
-        
-        h, w, FPS = vid_res[0], vid_res[1], fps
+        if audio_name == None:
+            audio_name = driving_audio[:-4]
+        save_root = join('sample_results', audio_name)
+
         ############################## Inference ##################################
         # read audio
         audio, _ = librosa.load(driving_audio, sr=sr)
@@ -185,7 +209,7 @@ class LiveSpeechPortraits:
         mel_nframe = mel80.shape[0]
         with torch.no_grad():
             length = torch.Tensor([mel_nframe])
-            mel80_torch = torch.from_numpy(mel80.astype(np.float32)).to(device).unsqueeze(0)
+            mel80_torch = torch.from_numpy(mel80.astype(np.float32)).to(self.device).unsqueeze(0)
             hidden_reps = self.APC_model.forward(mel80_torch, length)[0]   # [mel_nframe, 512]
             hidden_reps = hidden_reps.cpu().numpy()
         audio_feats = hidden_reps
@@ -256,37 +280,40 @@ class LiveSpeechPortraits:
 
         #### 6. Image2Image translation & Save resuls
         print('6. Image2Image translation & Saving results...')
-        for ind in tqdm(range(0, nframe), desc='Image2Image translation inference'):
+        for ind in tqdm(range(0, nframe, batch_size), desc='Image2Image translation inference'):
             # feature_map: [input_nc, h, w]
-            current_pred_feature_map = self.facedataset.dataset.get_data_test_mode(pred_landmarks[ind], 
-                                                                              pred_shoulders[ind], 
+            current_pred_feature_map = torch.stack([self.facedataset.dataset.get_data_test_mode(pred_landmarks[i], 
+                                                                              pred_shoulders[i], 
                                                                               self.facedataset.dataset.image_pad)
-            input_feature_maps = current_pred_feature_map.unsqueeze(0).to(device)
-            pred_fake = self.Feature2Face.inference(input_feature_maps, img_candidates) 
-            # save results
-            visual_list = [('pred', util.tensor2im(pred_fake[0]))]
-            if self.save_feature_maps:
-                visual_list += [('input', np.uint8(current_pred_feature_map[0].cpu().numpy() * 255))]
-            visuals = OrderedDict(visual_list)
-            self.visualizer.save_images(save_root, visuals, str(ind+1))
+                                                                              for i in range(ind, ind+batch_size)])
+            input_feature_maps = current_pred_feature_map.to(self.device)
+            candidates = self.img_candidates.repeat(batch_size, 1, 1, 1)
+            print(input_feature_maps.shape, candidates.shape)
+            pred_fake = self.Feature2Face.inference(input_feature_maps, candidates) 
+            # # save results
+            # visual_list = [('pred', util.tensor2im(pred_fake[0]))]
+            # if self.save_feature_maps:
+            #     visual_list += [('input', np.uint8(current_pred_feature_map[0].cpu().numpy() * 255))]
+            # visuals = OrderedDict(visual_list)
+            # self.visualizer.save_images(save_root, visuals, str(ind+1))
 
 
-        ## make videos
-        # generate corresponding audio, reused for all results
-        tmp_audio_path = join(save_root, 'tmp.wav')
-        tmp_audio_clip = audio[ : np.int32(nframe * sr / FPS)]
-        librosa.output.write_wav(tmp_audio_path, tmp_audio_clip, sr)
+        if make_video:
+            # generate corresponding audio, reused for all results
+            tmp_audio_path = join(save_root, 'tmp.wav')
+            tmp_audio_clip = audio[ : np.int32(nframe * sr / FPS)]
+            librosa.output.write_wav(tmp_audio_path, tmp_audio_clip, sr)
 
 
-        final_path = join(save_root, audio_name + '.avi')
-        write_video_with_audio(tmp_audio_path, final_path, 'pred_')
-        feature_maps_path = join(save_root, audio_name + '_feature_maps.avi')
-        write_video_with_audio(tmp_audio_path, feature_maps_path, 'input_')
+            final_path = join(save_root, audio_name + '.avi')
+            self.write_video_with_audio(nframe, save_root, tmp_audio_path, final_path, 'pred_')
+            feature_maps_path = join(save_root, audio_name + '_feature_maps.avi')
+            self.write_video_with_audio(nframe, save_root, tmp_audio_path, feature_maps_path, 'input_')
 
-        if os.path.exists(tmp_audio_path):
-            os.remove(tmp_audio_path)
+            if os.path.exists(tmp_audio_path):
+                os.remove(tmp_audio_path)
         
-        if not opt.save_intermediates:
+        if not save_intermediates:
             _img_paths = list(map(lambda x:str(x), list(Path(save_root).glob('*.jpg'))))
             for i in tqdm(range(len(_img_paths)), desc='deleting intermediate images'):
                 os.remove(_img_paths[i])
