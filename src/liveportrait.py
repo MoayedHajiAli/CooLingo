@@ -13,7 +13,6 @@ import scipy.io as sio
 import argparse
 import yaml
 import albumentations as A
-import albumentations.pytorch
 from pathlib import Path
 
 from src.modules.LiveSpeechPortraits.options.test_audio2feature_options import TestOptions as FeatureOptions
@@ -293,13 +292,13 @@ class LiveSpeechPortraits:
             candidates = self.img_candidates.repeat(current_pred_feature_map.shape[0], 1, 1, 1)
             pred_fake = self.Feature2Face.inference(input_feature_maps, candidates) 
             
-            # # save results
-            # for i in range(pred_fake.shape[0]):
-            #     visual_list = [('pred', util.tensor2im(pred_fake[i]).astype(np.uint8))]
-            #     if self.save_feature_maps:
-            #         visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
-            #     visuals = OrderedDict(visual_list)
-            #     self.visualizer.save_images(save_root, visuals, str(ind+i+1))
+            # save results
+            for i in range(pred_fake.shape[0]):
+                visual_list = [('pred', util.tensor2im(pred_fake[i]).astype(np.uint8))]
+                if self.save_feature_maps:
+                    visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
+                visuals = OrderedDict(visual_list)
+                self.visualizer.save_images(save_root, visuals, str(ind+i+1))
 
 
         if make_video:
