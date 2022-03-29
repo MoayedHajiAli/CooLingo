@@ -31,18 +31,20 @@ class Blenderbot:
         self.top_p = top_p
         self.length_penalty = length_penalty
         self.num_beams = num_beams
+        self.sos = 1
+        self.eos = 2
     
     
     def get_response(self, message, reply_start=None, past=None, do_sample=True):
         with torch.no_grad():
             #tokenize the utterance
             inputs = self.tokenizer(message, return_tensors="pt").to(self.device)
-            
             # TODO: take a reply
             if reply_start:
                 reply_start = self.tokenizer(reply_start, return_tensors="pt")
-                inputs['decoder_input_ids'] = reply_start['input_ids']
-            
+                inputs['decoder_input_ids'] = reply_start['input_ids'][:, :-1] # remove eos token
+                inputs['decoder_input_ids'] = torch.cat([torch.ones(inputs['decoder_input_ids'].shape[0], 1, dtype=torch.long) * self.sos, 
+                                                        inputs['decoder_input_ids']], dim=1)
             #generate model results
             result = self.model.generate(**inputs, 
                                         temperature=self.temperature, 
@@ -52,6 +54,13 @@ class Blenderbot:
                                         length_penalty=self.length_penalty,
                                         num_beams=self.num_beams
                                         )
+        # remove sos and eos tokens
+        response = result[0]
+        while response[-1] == self.eos:
+            response = response[:-1]
         
-        return self.tokenizer.decode(result[0]), None 
+        while response[0] == self.sos:
+            response = response[1:]
+
+        return self.tokenizer.decode(response), None 
             
