@@ -38,7 +38,7 @@ class LiveSpeechPortraits:
                 'APC_epoch_160.model':'1uUU6iZ8CdgsCk3JAG6V7BhJXnfWpaQ7a'}
     
 
-    def __init__(self, id='May', apc_model_name='APC_epoch_160.model', vid_res=256):
+    def __init__(self, id='May', apc_model_name='APC_epoch_160.model', vid_res=512):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         with open(join('src/modules/LiveSpeechPortraits/config/', id + '.yaml')) as f:
@@ -190,7 +190,7 @@ class LiveSpeechPortraits:
         subprocess.call(cmd, shell=True) 
         os.remove(video_tmp_path)  # remove the template video
             
-    def generate_protrait(self, driving_audio, audio_name=None, sr=16000, vid_res=512, fps=60, save_intermediates=True, make_video=False, batch_size=32):
+    def generate_protrait(self, driving_audio, audio_name=None, sr=16000, fps=60, save_intermediates=True, make_video=False, batch_size=32):
         save_intermediates = save_intermediates or not make_video
         FPS = fps
         # self.Renderopt.loadSize = vid_res
