@@ -7,13 +7,13 @@ import torch
 from collections import OrderedDict
 import librosa
 from skimage.io import imread
-from PIL import Image 
+from PIL import Image
 import cv2
 import scipy.io as sio
 import argparse
 import yaml
-import albumentations as A
 from pathlib import Path
+import albumentations.pytorch as A
 
 from src.modules.LiveSpeechPortraits.options.test_audio2feature_options import TestOptions as FeatureOptions
 from src.modules.LiveSpeechPortraits.options.test_audio2headpose_options import TestOptions as HeadposeOptions
@@ -34,80 +34,82 @@ warnings.filterwarnings("ignore")
 
 
 class LiveSpeechPortraits:
-    ckpt_g_id = {'May':'1E_chAFvsX6Q9YKA8J8lFy4XU4YRSLvlu',
-                'APC_epoch_160.model':'1uUU6iZ8CdgsCk3JAG6V7BhJXnfWpaQ7a'}
-    
+    ckpt_g_id = {'May': '1E_chAFvsX6Q9YKA8J8lFy4XU4YRSLvlu',
+                 'APC_epoch_160.model': '1uUU6iZ8CdgsCk3JAG6V7BhJXnfWpaQ7a'}
 
     def __init__(self, id='May', apc_model_name='APC_epoch_160.model', vid_res=512):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         with open(join('src/modules/LiveSpeechPortraits/config/', id + '.yaml')) as f:
             config = yaml.load(f, Loader=yaml.Loader)
-        
+
         data_root = 'pretrained_models/LiveSpeechPortraits/data/'
-        
+
         # download chpt if not exitsts
         os.makedirs(data_root, exist_ok=True)
         if not os.path.exists(join(data_root, id)):
             zip_file_path = join(data_root, f'{id}.zip')
             gdown.download(id=self.ckpt_g_id[id], output=zip_file_path)
-            
+
             # unzip downloaded file
             with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
                 zip_ref.extractall(data_root)
-        
+
         if not os.path.exists(os.path.join(data_root, apc_model_name)):
             gdown.download(id=self.ckpt_g_id[apc_model_name], output=data_root)
-            
-            
-            
+
         data_root = join(data_root, id)
-       
 
         ############################ Hyper Parameters #############################
-        self.mouth_indices = np.concatenate([np.arange(4, 11), np.arange(46, 64)])
-        eye_brow_indices = [27, 65, 28, 68, 29, 67, 30, 66, 31, 72, 32, 69, 33, 70, 34, 71]
-        self.eye_brow_indices = np.array(eye_brow_indices, np.int32)    
-    
+        self.mouth_indices = np.concatenate(
+            [np.arange(4, 11), np.arange(46, 64)])
+        eye_brow_indices = [27, 65, 28, 68, 29, 67,
+                            30, 66, 31, 72, 32, 69, 33, 70, 34, 71]
+        self.eye_brow_indices = np.array(eye_brow_indices, np.int32)
 
-    
         ############################ Pre-defined Data #############################
-        self.mean_pts3d = np.load(join(data_root, 'mean_pts3d.npy'))  
+        self.mean_pts3d = np.load(join(data_root, 'mean_pts3d.npy'))
         fit_data = np.load(config['dataset_params']['fit_data_path'])
-        pts3d = np.load(config['dataset_params']['pts3d_path']) - self.mean_pts3d
-        trans = fit_data['trans'][:,:,0].astype(np.float32)
+        pts3d = np.load(config['dataset_params']
+                        ['pts3d_path']) - self.mean_pts3d
+        trans = fit_data['trans'][:, :, 0].astype(np.float32)
         self.mean_translation = trans.mean(axis=0)
         self.candidate_eye_brow = pts3d[10:, eye_brow_indices]
-        self.std_mean_pts3d = np.load(config['dataset_params']['pts3d_path']).mean(axis=0)
-        
-        # candidates images    
+        self.std_mean_pts3d = np.load(
+            config['dataset_params']['pts3d_path']).mean(axis=0)
+
+        # candidates images
         self.img_candidates = []
         for j in range(4):
-            output = np.array(Image.open(join(data_root, 'candidates', f'normalized_full_{j}.jpg')).resize((vid_res, vid_res)))
-            output = A.pytorch.transforms.ToTensor(normalize={'mean':(0.5,0.5,0.5), 
-                                                              'std':(0.5,0.5,0.5)})(image=output)['image']
+            output = np.array(Image.open(join(
+                data_root, 'candidates', f'normalized_full_{j}.jpg')).resize((vid_res, vid_res)))
+            output = A.transforms.ToTensor(normalize={'mean': (0.5, 0.5, 0.5),
+                                                      'std': (0.5, 0.5, 0.5)})(image=output)['image']
             self.img_candidates.append(output)
-        self.img_candidates = torch.cat(self.img_candidates).unsqueeze(0).to(self.device) 
+        self.img_candidates = torch.cat(
+            self.img_candidates).unsqueeze(0).to(self.device)
 
         # shoulders
-        self.shoulders = np.load(join(data_root, 'normalized_shoulder_points.npy'))
+        self.shoulders = np.load(
+            join(data_root, 'normalized_shoulder_points.npy'))
         self.shoulder3D = np.load(join(data_root, 'shoulder_points3D.npy'))[1]
-        self.ref_trans = trans[1]    
+        self.ref_trans = trans[1]
 
         # camera matrix, we always use training set intrinsic parameters.
-        self.camera = utils.camera() 
-        self.camera_intrinsic = np.load(join(data_root, 'camera_intrinsic.npy')).astype(np.float32)
-        self.APC_feat_database = np.load(join(data_root, 'APC_feature_base.npy'))
+        self.camera = utils.camera()
+        self.camera_intrinsic = np.load(
+            join(data_root, 'camera_intrinsic.npy')).astype(np.float32)
+        self.APC_feat_database = np.load(
+            join(data_root, 'APC_feature_base.npy'))
 
         # load reconstruction data
-        self.scale = sio.loadmat(join(data_root, 'id_scale.mat'))['scale'][0,0]
-        # Audio2Mel_torch = audio_funcs.Audio2Mel(n_fft=512, hop_length=int(16000/120), win_length=int(16000/60), sampling_rate=16000, 
+        self.scale = sio.loadmat(join(data_root, 'id_scale.mat'))[
+            'scale'][0, 0]
+        # Audio2Mel_torch = audio_funcs.Audio2Mel(n_fft=512, hop_length=int(16000/120), win_length=int(16000/60), sampling_rate=16000,
         #                                         n_mel_channels=80, mel_fmin=90, mel_fmax=7600.0).to(device)
 
-
-
         ########################### Experiment Settings ###########################
-        #### user config
+        # user config
         self.use_LLE = config['model_params']['APC']['use_LLE']
         self.Knear = config['model_params']['APC']['Knear']
         self.LLE_percent = config['model_params']['APC']['LLE_percent']
@@ -119,10 +121,11 @@ class LiveSpeechPortraits:
         self.Feat_AMPs = config['model_params']['Audio2Mouth']['AMP'][1:]
         self.rot_AMP, self.trans_AMP = config['model_params']['Headpose']['AMP']
         self.shoulder_AMP = config['model_params']['Headpose']['shoulder_AMP']
-        self.save_feature_maps = False # config['model_params']['Image2Image']['save_input']
+        # config['model_params']['Image2Image']['save_input']
+        self.save_feature_maps = False
 
-        #### common settings
-        self.Featopt = FeatureOptions().parse() 
+        # common settings
+        self.Featopt = FeatureOptions().parse()
         self.Headopt = HeadposeOptions().parse()
         self.Renderopt = RenderOptions().parse()
         self.Renderopt.loadSize = vid_res
@@ -136,65 +139,63 @@ class LiveSpeechPortraits:
         if self.device == 'cpu':
             self.Featopt.gpu_ids = self.Headopt.gpu_ids = self.Renderopt.gpu_ids = []
 
-
-
         ############################# Load Models #################################
         print('---------- Loading Model: APC-------------')
         self.APC_model = APC_encoder(config['model_params']['APC']['mel_dim'],
-                                config['model_params']['APC']['hidden_size'],
-                                config['model_params']['APC']['num_layers'],
-                                config['model_params']['APC']['residual'])
+                                     config['model_params']['APC']['hidden_size'],
+                                     config['model_params']['APC']['num_layers'],
+                                     config['model_params']['APC']['residual'])
         print(config['model_params']['APC']['ckp_path'])
         print(self.device)
 
-        self.APC_model.load_state_dict(torch.load(config['model_params']['APC']['ckp_path'], map_location=self.device), strict=False)
-        self.APC_model.to(self.device) 
+        self.APC_model.load_state_dict(torch.load(
+            config['model_params']['APC']['ckp_path'], map_location=self.device), strict=False)
+        self.APC_model.to(self.device)
         self.APC_model.eval()
-        
+
         print('---------- Loading Model: {} -------------'.format(self.Featopt.task))
-        self.Audio2Feature = create_model(self.Featopt)   
-        self.Audio2Feature.setup(self.Featopt)  
-        self.Audio2Feature.eval()    
-        
-        
+        self.Audio2Feature = create_model(self.Featopt)
+        self.Audio2Feature.setup(self.Featopt)
+        self.Audio2Feature.eval()
+
         print('---------- Loading Model: {} -------------'.format(self.Headopt.task))
-        self.Audio2Headpose = create_model(self.Headopt)    
+        self.Audio2Headpose = create_model(self.Headopt)
         self.Audio2Headpose.setup(self.Headopt)
-        self.Audio2Headpose.eval()              
+        self.Audio2Headpose.eval()
         if self.Headopt.feature_decoder == 'WaveNet':
             if self.device == 'cuda':
                 self.Headopt.A2H_receptive_field = self.Audio2Headpose.Audio2Headpose.module.WaveNet.receptive_field
             else:
                 self.Headopt.A2H_receptive_field = self.Audio2Headpose.Audio2Headpose.WaveNet.receptive_field
-                
+
         print('---------- Loading Model: {} -------------'.format(self.Renderopt.task))
         self.facedataset = create_dataset(self.Renderopt)
 
         print(self.Renderopt)
         self.Feature2Face = create_model(self.Renderopt)
-        self.Feature2Face.setup(self.Renderopt)   
+        self.Feature2Face.setup(self.Renderopt)
         self.Feature2Face.eval()
         self.visualizer = Visualizer(self.Renderopt)
-
-
 
     def write_video_with_audio(self, nframe, save_root, audio_path, output_path, prefix='pred_'):
         fps, fourcc = 60, cv2.VideoWriter_fourcc(*'DIVX')
         video_tmp_path = join(save_root, 'tmp.avi')
-        out = cv2.VideoWriter(video_tmp_path, fourcc, fps, (Renderopt.loadSize, Renderopt.loadSize))
+        out = cv2.VideoWriter(video_tmp_path, fourcc, fps,
+                              (Renderopt.loadSize, Renderopt.loadSize))
         for j in tqdm(range(nframe), position=0, desc='writing video'):
             img = cv2.imread(join(save_root, prefix + str(j+1) + '.jpg'))
             out.write(img)
-        out.release() 
-        cmd = 'ffmpeg -i "' + video_tmp_path + '" -i "' + audio_path + '" -codec copy -shortest "' + output_path + '"'
-        subprocess.call(cmd, shell=True) 
+        out.release()
+        cmd = 'ffmpeg -i "' + video_tmp_path + '" -i "' + \
+            audio_path + '" -codec copy -shortest "' + output_path + '"'
+        subprocess.call(cmd, shell=True)
         os.remove(video_tmp_path)  # remove the template video
             
     def generate_protrait(self, driving_audio, audio_name=None, sr=16000, fps=60, save_intermediates=True, make_video=False, batch_size=32):
         save_intermediates = save_intermediates or not make_video
         FPS = fps
         # self.Renderopt.loadSize = vid_res
-        
+
         if audio_name == None:
             audio_name = driving_audio[:-4]
         save_root = join('sample_results', audio_name)
@@ -202,122 +203,137 @@ class LiveSpeechPortraits:
         ############################## Inference ##################################
         # read audio
         audio, _ = librosa.load(driving_audio, sr=sr)
-        total_frames = np.int32(audio.shape[0] / sr * FPS) 
+        total_frames = np.int32(audio.shape[0] / sr * FPS)
 
-
-        #### 1. compute APC features   
-        print('1. Computing APC features...')                    
+        # 1. compute APC features
+        print('1. Computing APC features...')
         mel80 = utils.compute_mel_one_sequence(audio, device=self.device)
         mel_nframe = mel80.shape[0]
         with torch.no_grad():
             length = torch.Tensor([mel_nframe])
-            mel80_torch = torch.from_numpy(mel80.astype(np.float32)).to(self.device).unsqueeze(0)
-            hidden_reps = self.APC_model.forward(mel80_torch, length)[0]   # [mel_nframe, 512]
+            mel80_torch = torch.from_numpy(mel80.astype(
+                np.float32)).to(self.device).unsqueeze(0)
+            hidden_reps = self.APC_model.forward(mel80_torch, length)[
+                0]   # [mel_nframe, 512]
             hidden_reps = hidden_reps.cpu().numpy()
         audio_feats = hidden_reps
 
-
-        #### 2. manifold projection
+        # 2. manifold projection
         if self.use_LLE:
             print('2. Manifold projection...')
-            ind = utils.KNN_with_torch(audio_feats, self.APC_feat_database, K=self.Knear)
-            weights, feat_fuse = utils.compute_LLE_projection_all_frame(audio_feats, self.APC_feat_database, ind, audio_feats.shape[0])
-            audio_feats = audio_feats * (1-self.LLE_percent) + feat_fuse * self.LLE_percent
+            ind = utils.KNN_with_torch(
+                audio_feats, self.APC_feat_database, K=self.Knear)
+            weights, feat_fuse = utils.compute_LLE_projection_all_frame(
+                audio_feats, self.APC_feat_database, ind, audio_feats.shape[0])
+            audio_feats = audio_feats * \
+                (1-self.LLE_percent) + feat_fuse * self.LLE_percent
 
-
-        #### 3. Audio2Mouth
+        # 3. Audio2Mouth
         print('3. Audio2Mouth inference...')
-        pred_Feat = self.Audio2Feature.generate_sequences(audio_feats, sr, FPS, fill_zero=True, opt=self.Featopt)
+        pred_Feat = self.Audio2Feature.generate_sequences(
+            audio_feats, sr, FPS, fill_zero=True, opt=self.Featopt)
 
-
-        #### 4. Audio2Headpose
+        # 4. Audio2Headpose
         print('4. Headpose inference...')
         # set history headposes as zero
-        pre_headpose = np.zeros(self.Headopt.A2H_wavenet_input_channels, np.float32)
-        pred_Head = self.Audio2Headpose.generate_sequences(audio_feats, pre_headpose, fill_zero=True, sigma_scale=0.3, opt=self.Headopt)
+        pre_headpose = np.zeros(
+            self.Headopt.A2H_wavenet_input_channels, np.float32)
+        pred_Head = self.Audio2Headpose.generate_sequences(
+            audio_feats, pre_headpose, fill_zero=True, sigma_scale=0.3, opt=self.Headopt)
 
-
-        #### 5. Post-Processing 
+        # 5. Post-Processing
         print('5. Post-processing...')
         nframe = min(pred_Feat.shape[0], pred_Head.shape[0])
         pred_pts3d = np.zeros([nframe, 73, 3])
-        pred_pts3d[:, self.mouth_indices] = pred_Feat.reshape(-1, 25, 3)[:nframe]
+        pred_pts3d[:,
+                   self.mouth_indices] = pred_Feat.reshape(-1, 25, 3)[:nframe]
 
-        ## mouth
-        pred_pts3d = utils.landmark_smooth_3d(pred_pts3d, self.Feat_smooth_sigma, area='only_mouth')
-        pred_pts3d = utils.mouth_pts_AMP(pred_pts3d, True, self.AMP_method, self.Feat_AMPs)
+        # mouth
+        pred_pts3d = utils.landmark_smooth_3d(
+            pred_pts3d, self.Feat_smooth_sigma, area='only_mouth')
+        pred_pts3d = utils.mouth_pts_AMP(
+            pred_pts3d, True, self.AMP_method, self.Feat_AMPs)
         pred_pts3d = pred_pts3d + self.mean_pts3d
-        pred_pts3d = utils.solve_intersect_mouth(pred_pts3d)  # solve intersect lips if exist
+        pred_pts3d = utils.solve_intersect_mouth(
+            pred_pts3d)  # solve intersect lips if exist
 
-        ## headpose
+        # headpose
         pred_Head[:, 0:3] *= self.rot_AMP
         pred_Head[:, 3:6] *= self.trans_AMP
-        pred_headpose = utils.headpose_smooth(pred_Head[:,:6], self.Head_smooth_sigma).astype(np.float32)
+        pred_headpose = utils.headpose_smooth(
+            pred_Head[:, :6], self.Head_smooth_sigma).astype(np.float32)
         pred_headpose[:, 3:] += self.mean_translation
         pred_headpose[:, 0] += 180
 
-        ## compute projected landmarks
+        # compute projected landmarks
         pred_landmarks = np.zeros([nframe, 73, 2], dtype=np.float32)
         final_pts3d = np.zeros([nframe, 73, 3], dtype=np.float32)
         final_pts3d[:] = self.std_mean_pts3d.copy()
         final_pts3d[:, 46:64] = pred_pts3d[:nframe, 46:64]
         for k in tqdm(range(nframe)):
             ind = k % self.candidate_eye_brow.shape[0]
-            final_pts3d[k, self.eye_brow_indices] = self.candidate_eye_brow[ind] + self.mean_pts3d[self.eye_brow_indices]
-            pred_landmarks[k], _, _ = utils.project_landmarks(self.camera_intrinsic, self.camera.relative_rotation, 
-                                                              self.camera.relative_translation, self.scale, 
-                                                              pred_headpose[k], final_pts3d[k]) 
+            final_pts3d[k, self.eye_brow_indices] = self.candidate_eye_brow[ind] + \
+                self.mean_pts3d[self.eye_brow_indices]
+            pred_landmarks[k], _, _ = utils.project_landmarks(self.camera_intrinsic, self.camera.relative_rotation,
+                                                              self.camera.relative_translation, self.scale,
+                                                              pred_headpose[k], final_pts3d[k])
 
-        ## Upper Body Motion
+        # Upper Body Motion
         pred_shoulders = np.zeros([nframe, 18, 2], dtype=np.float32)
         pred_shoulders3D = np.zeros([nframe, 18, 3], dtype=np.float32)
         for k in range(nframe):
             diff_trans = pred_headpose[k][3:] - self.ref_trans
-            pred_shoulders3D[k] = self.shoulder3D + diff_trans * self.shoulder_AMP
+            pred_shoulders3D[k] = self.shoulder3D + \
+                diff_trans * self.shoulder_AMP
             # project
             project = self.camera_intrinsic.dot(pred_shoulders3D[k].T)
             project[:2, :] /= project[2, :]  # divide z
             pred_shoulders[k] = project[:2, :].T
 
-
-        #### 6. Image2Image translation & Save resuls
+        # 6. Image2Image translation & Save resuls
         print('6. Image2Image translation & Saving results...')
         for ind in tqdm(range(0, nframe, batch_size), desc='Image2Image translation inference'):
             # feature_map: [input_nc, h, w]
-            current_pred_feature_map = torch.stack([self.facedataset.dataset.get_data_test_mode(pred_landmarks[i], 
-                                                                              pred_shoulders[i], 
-                                                                              self.facedataset.dataset.image_pad)
-                                                                              for i in range(ind, min(ind+batch_size, nframe))])
+            current_pred_feature_map = torch.stack([self.facedataset.dataset.get_data_test_mode(pred_landmarks[i],
+                                                                                                pred_shoulders[i],
+                                                                                                self.facedataset.dataset.image_pad)
+                                                    for i in range(ind, min(ind+batch_size, nframe))])
             input_feature_maps = current_pred_feature_map.to(self.device)
-            candidates = self.img_candidates.repeat(current_pred_feature_map.shape[0], 1, 1, 1)
-            pred_fake = self.Feature2Face.inference(input_feature_maps, candidates) 
-            
+            candidates = self.img_candidates.repeat(
+                current_pred_feature_map.shape[0], 1, 1, 1)
+            pred_fake = self.Feature2Face.inference(
+                input_feature_maps, candidates)
+
             # save results
             for i in range(pred_fake.shape[0]):
-                visual_list = [('pred', util.tensor2im(pred_fake[i]).astype(np.uint8))]
+                visual_list = [('pred', util.tensor2im(
+                    pred_fake[i]).astype(np.uint8))]
                 if self.save_feature_maps:
-                    visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
+                    visual_list += [
+                        ('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
                 visuals = OrderedDict(visual_list)
                 self.visualizer.save_images(save_root, visuals, str(ind+i+1))
-
 
         if make_video:
             # generate corresponding audio, reused for all results
             tmp_audio_path = join(save_root, 'tmp.wav')
-            tmp_audio_clip = audio[ : np.int32(nframe * sr / FPS)]
+            tmp_audio_clip = audio[: np.int32(nframe * sr / FPS)]
             librosa.output.write_wav(tmp_audio_path, tmp_audio_clip, sr)
 
-
             final_path = join(save_root, audio_name + '.avi')
-            self.write_video_with_audio(nframe, save_root, tmp_audio_path, final_path, 'pred_')
-            feature_maps_path = join(save_root, audio_name + '_feature_maps.avi')
-            self.write_video_with_audio(nframe, save_root, tmp_audio_path, feature_maps_path, 'input_')
+            self.write_video_with_audio(
+                nframe, save_root, tmp_audio_path, final_path, 'pred_')
+            feature_maps_path = join(
+                save_root, audio_name + '_feature_maps.avi')
+            self.write_video_with_audio(
+                nframe, save_root, tmp_audio_path, feature_maps_path, 'input_')
 
             if os.path.exists(tmp_audio_path):
                 os.remove(tmp_audio_path)
-        
+
         if not save_intermediates:
-            _img_paths = list(map(lambda x:str(x), list(Path(save_root).glob('*.jpg'))))
+            _img_paths = list(
+                map(lambda x: str(x), list(Path(save_root).glob('*.jpg'))))
             for i in tqdm(range(len(_img_paths)), desc='deleting intermediate images'):
                 os.remove(_img_paths[i])
 
