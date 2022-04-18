@@ -39,7 +39,7 @@ class LiveSpeechPortraits:
                 'APC_epoch_160.model':'1uUU6iZ8CdgsCk3JAG6V7BhJXnfWpaQ7a'}
     
 
-    def __init__(self, id='May', apc_model_name='APC_epoch_160.model', vid_res=256):
+    def __init__(self, id='May', apc_model_name='APC_epoch_160.model', vid_res=512):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         with open(join('src/modules/LiveSpeechPortraits/config/', id + '.yaml')) as f:
@@ -120,7 +120,7 @@ class LiveSpeechPortraits:
         self.Feat_AMPs = config['model_params']['Audio2Mouth']['AMP'][1:]
         self.rot_AMP, self.trans_AMP = config['model_params']['Headpose']['AMP']
         self.shoulder_AMP = config['model_params']['Headpose']['shoulder_AMP']
-        self.save_feature_maps = False # config['model_params']['Image2Image']['save_input']
+        self.save_feature_maps = config['model_params']['Image2Image']['save_input']
 
         #### common settings
         self.Featopt = FeatureOptions().parse() 
@@ -182,7 +182,7 @@ class LiveSpeechPortraits:
     def write_video_with_audio(self, nframe, save_root, audio_path, output_path, prefix='pred_'):
         fps, fourcc = 60, cv2.VideoWriter_fourcc(*'DIVX')
         video_tmp_path = join(save_root, 'tmp.avi')
-        out = cv2.VideoWriter(video_tmp_path, fourcc, fps, (Renderopt.loadSize, Renderopt.loadSize))
+        out = cv2.VideoWriter(video_tmp_path, fourcc, fps, (self.Renderopt.loadSize, self.Renderopt.loadSize))
         for j in tqdm(range(nframe), position=0, desc='writing video'):
             img = cv2.imread(join(save_root, prefix + str(j+1) + '.jpg'))
             out.write(img)
@@ -191,7 +191,7 @@ class LiveSpeechPortraits:
         subprocess.call(cmd, shell=True) 
         os.remove(video_tmp_path)  # remove the template video
             
-    def generate_protrait(self, driving_audio, audio_name=None, sr=16000, vid_res=512, fps=60, save_intermediates=True, make_video=False, batch_size=32):
+    def generate_protrait(self, driving_audio, audio_name=None, sr=16000, fps=60, save_intermediates=True, make_video=False, batch_size=32):
         save_intermediates = save_intermediates or not make_video
         FPS = fps
         # self.Renderopt.loadSize = vid_res
@@ -281,6 +281,22 @@ class LiveSpeechPortraits:
             pred_shoulders[k] = project[:2, :].T
 
 
+            
+#         for ind in tqdm(range(0, nframe), desc='Image2Image translation inference'):
+#             # feature_map: [input_nc, h, w]
+#             current_pred_feature_map = self.facedataset.dataset.get_data_test_mode(pred_landmarks[ind], 
+#                                                                               pred_shoulders[ind], 
+#                                                                               self.facedataset.dataset.image_pad)
+#             input_feature_maps = current_pred_feature_map.unsqueeze(0).to(self.device)
+#             pred_fake = self.Feature2Face.inference(input_feature_maps, self.img_candidates) 
+            
+#             # save results
+#             visual_list = [('pred', util.tensor2im(pred_fake[0]))]
+#             if self.save_feature_maps:
+#                 visual_list += [('input', np.uint8(current_pred_feature_map[0].cpu().numpy() * 255))]
+#             visuals = OrderedDict(visual_list)
+#             self.visualizer.save_images(save_root, visuals, str(ind+1))
+    
         #### 6. Image2Image translation & Save resuls
         print('6. Image2Image translation & Saving results...')
         for ind in tqdm(range(0, nframe, batch_size), desc='Image2Image translation inference'):
@@ -293,13 +309,13 @@ class LiveSpeechPortraits:
             candidates = self.img_candidates.repeat(current_pred_feature_map.shape[0], 1, 1, 1)
             pred_fake = self.Feature2Face.inference(input_feature_maps, candidates) 
             
-            # # save results
-            # for i in range(pred_fake.shape[0]):
-            #     visual_list = [('pred', util.tensor2im(pred_fake[i]).astype(np.uint8))]
-            #     if self.save_feature_maps:
-            #         visual_list += [('input', np.uint8(current_pred_feature_map[i].cpu().numpy() * 255))]
-            #     visuals = OrderedDict(visual_list)
-            #     self.visualizer.save_images(save_root, visuals, str(ind+i+1))
+            # save results
+            for i in range(pred_fake.shape[0]):
+                visual_list = [('pred', util.tensor2im(pred_fake[i]).astype(np.uint8))]
+                if self.save_feature_maps:
+                    visual_list += [('input', np.uint8(current_pred_feature_map[i][0].cpu().numpy() * 255))]
+                visuals = OrderedDict(visual_list) 
+                self.visualizer.save_images(save_root, visuals, str(ind+i+1))
 
 
         if make_video:
