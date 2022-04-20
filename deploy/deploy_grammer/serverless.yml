@@ -1,0 +1,16 @@
+service: serverless-grammar
+
+provider:
+  name: aws #cloud provider
+  region: us-east-2 #region (mumbai)
+  memorySize: 10240 #memory usage
+  timeout: 300 
+
+functions:
+  grammar:
+    image: 776286945541.dkr.ecr.us-east-2.amazonaws.com/grammar-lambda:latest
+    events:
+      - http: 
+          path: sha256:e980526ac2f721b793d0789de9bb1289c12314b95341f7057dfbb518f9688901
+          method: post 
+

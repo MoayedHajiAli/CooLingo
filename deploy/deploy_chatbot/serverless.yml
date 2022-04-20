@@ -1,0 +1,16 @@
+service: serverless-chatbot
+
+provider:
+  name: aws #cloud provider
+  region: us-east-2 #region (mumbai)
+  memorySize: 10240 #memory usage
+  timeout: 300 
+
+functions:
+  chatbot:
+    image: 776286945541.dkr.ecr.us-east-2.amazonaws.com/chatbot-lambda:latest
+    events:
+      - http: 
+          path: sha256:24f74c8043082ef3319dfe19d3ca211ff6e78b5e435c212bcdebf84607f6107c
+          method: post 
+

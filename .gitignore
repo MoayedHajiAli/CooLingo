@@ -1,3 +1,4 @@
+*pretrained*
 pretrained_models
 .ipynb_checkpoints
 *.pyc
@@ -14,3 +15,5 @@ Experiments/text_to_speach_model/vocoder_model.pth.tar
 Experiments/text_to_speach_model/TTS_repo/
 __pycache__
 */__pycache__
+
+sample_results/sample_data/audio/sample/
