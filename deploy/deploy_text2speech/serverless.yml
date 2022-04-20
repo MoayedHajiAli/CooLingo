@@ -1,0 +1,16 @@
+service: serverless-text2speech
+
+provider:
+  name: aws #cloud provider
+  region: us-east-2 #region (mumbai)
+  memorySize: 10240 #memory usage
+  timeout: 300 
+
+functions:
+  text2speech:
+    image: 776286945541.dkr.ecr.us-east-2.amazonaws.com/lambda_text2speech:latest
+    events:
+      - http: 
+          path: sha256:a580936f33ac9242f65e58c6f8ba9830c7082b3c240d85e5b058b9b601e82e90
+          method: post 
+
