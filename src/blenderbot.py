@@ -41,7 +41,7 @@ class Blenderbot:
             inputs = self.tokenizer(message, return_tensors="pt").to(self.device)
             # TODO: take a reply
             if reply_start:
-                reply_start = self.tokenizer(reply_start, return_tensors="pt")
+                reply_start = self.tokenizer(reply_start, return_tensors="pt").to(self.device)
                 inputs['decoder_input_ids'] = reply_start['input_ids'][:, :-1] # remove eos token
                 inputs['decoder_input_ids'] = torch.cat([torch.ones(inputs['decoder_input_ids'].shape[0], 1, dtype=torch.long) * self.sos, 
                                                         inputs['decoder_input_ids']], dim=1)
