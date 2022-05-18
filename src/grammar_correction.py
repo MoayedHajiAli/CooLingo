@@ -9,7 +9,7 @@ class GrammarCorrector():
         self.tokenizer = AutoTokenizer.from_pretrained("addy88/t5-grammar-correction")
         self.model = AutoModelForSeq2SeqLM.from_pretrained("addy88/t5-grammar-correction")
 
-    def correct_grammar(self, input):
+    def correct_grammar(self, input, token='grammar'):
         """
         Takes an input sentence and returns the a corrected version of it
         if there is any grammatical error in the input sentence.
@@ -19,7 +19,7 @@ class GrammarCorrector():
 
         Returns: A grammatically corrected version of the input sentence.
         """
-        input_ids = self.tokenizer(f'grammar: {input}', return_tensors='pt').input_ids
+        input_ids = self.tokenizer(f'{token}: {input}', return_tensors='pt').input_ids
         outputs = self.model.generate(input_ids)
         
         corrected_output = self.tokenizer.decode(outputs[0], skip_special_tokens=True)

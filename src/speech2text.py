@@ -83,7 +83,7 @@ class SpeechToText():
             The text (str) retrieved from the audio file.
 
         """
-        self.get_speech(audio_file_name)
+        # self.get_speech(audio_file_name)
         AUDIO_FILE = path.join(path.dirname(path.realpath(__file__)), 
             path.join(self.OUTPUT_PATH, audio_file_name))
         text = self.speech_to_text(AUDIO_FILE)
